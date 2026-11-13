@@ -1,0 +1,58 @@
+.omp-history-list {
+  min-width: 0;
+}
+
+.omp-history-card {
+  display: block;
+  width: 100%;
+  height: calc(3 * var(--sf-lh));
+  padding: calc(0.5 * var(--sf-lh)) 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--tv-fg, var(--t1));
+  text-align: left;
+}
+
+.omp-history-card:hover,
+.omp-history-card:focus-visible {
+  background: var(--l1);
+}
+
+.omp-history-title,
+.omp-history-meta {
+  height: var(--sf-lh);
+  overflow: hidden;
+  line-height: var(--sf-lh);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.omp-history-title {
+  font-size: 1em;
+  font-weight: bold;
+}
+
+.omp-history-meta {
+  color: var(--t3);
+  font-size: 0.9em;
+  margin-top: 0.4em;
+}
+
+.omp-history-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.omp-history-count {
+  color: var(--t3);
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-align: right;
+}
