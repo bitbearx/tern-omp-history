@@ -10,6 +10,7 @@ local rows = {}
 local filtered = {}
 local query = ""
 local panes = {}
+local sidebar_tabs = {}
 local loading = false
 local sizing = false
 local next_size_check = 0
@@ -100,6 +101,7 @@ end
 local function redraw(cx)
 	for _, canvas in cx.canvas:list() do
 		if canvas.owner == tern.plugin.id and canvas.title == TITLE then
+			sidebar_tabs[canvas.pane] = cx.session:tab_of(canvas.pane)
 			local main, dock = view(canvas.pane)
 			cx.canvas:set(canvas.pane, { view = main, dock = dock })
 		end
@@ -167,12 +169,16 @@ end
 
 -- 为当前标签页挂载侧边栏，已有面板时保留现有布局。
 local function ensure_sidebar(cx)
-	if tern.kv.get("visible") == false or opening then return end
+	if tern.kv.get("visible") ~= true or opening then return end
 	local focused = cx.session:focused()
 	local tab = if focused then cx.session:tab_of(focused) else nil
 	if not tab then return end
 	for _, canvas in cx.canvas:list() do
-		if canvas.owner == tern.plugin.id and cx.session:tab_of(canvas.pane) == tab then return end
+		if canvas.owner == tern.plugin.id and canvas.title == TITLE then
+			local canvas_tab = cx.session:tab_of(canvas.pane)
+			sidebar_tabs[canvas.pane] = canvas_tab
+			if canvas_tab == tab then return end
+		end
 	end
 	opening = true
 	local main, dock = view()
@@ -188,7 +194,43 @@ local function ensure_sidebar(cx)
 		focus = false,
 	})
 	opening = false
-	if not pane then cx:toast("error", "无法打开 OMP 历史侧边栏", tostring(err)) end
+	if pane then
+		sidebar_tabs[pane] = tab
+	else
+		cx:toast("error", "无法打开 OMP 历史侧边栏", tostring(err))
+	end
+end
+
+-- 隐藏所有历史面板，手动关闭时跳过已经关闭的窗格。
+local function hide_sidebars(cx, closed_pane)
+	tern.kv.set("visible", false)
+	for _, canvas in cx.canvas:list() do
+		if canvas.owner == tern.plugin.id and canvas.title == TITLE and canvas.pane ~= closed_pane then
+			cx.layout:close(canvas.pane)
+		end
+	end
+end
+
+-- 首次升级时隐藏旧版已打开的侧边栏，之后保留用户的切换状态。
+local function initialize_visibility(cx)
+	if tern.kv.get("default_hidden_v1") == true then return end
+	tern.kv.set("visible", false)
+	tern.kv.set("default_hidden_v1", true)
+	for _, canvas in cx.canvas:list() do
+		if canvas.owner == tern.plugin.id and canvas.title == TITLE then
+			cx.layout:close(canvas.pane)
+		end
+	end
+end
+
+-- 保留现有组件设置，添加供窗口右上角显示的历史入口。
+local function ensure_toolbar_widget(cx)
+	local widgets = cx.settings:get("widgets") or {}
+	for _, widget in widgets do
+		if widget.id == "omp-history/toggle" then return end
+	end
+	table.insert(widgets, { id = "omp-history/toggle" })
+	cx.settings:set("widgets", widgets)
 end
 
 -- 找到当前标签最右侧的实际内容窗格，避免把侧边栏再次拆开。
@@ -277,21 +319,25 @@ tern.command({
 	title = "OMP History: toggle sidebar",
 	icon = "history",
 	run = function(cx)
-		local visible = tern.kv.get("visible") == false
-		tern.kv.set("visible", visible)
-		if visible then
+		if tern.kv.get("visible") ~= true then
+			tern.kv.set("visible", true)
 			ensure_sidebar(cx)
 			refresh(cx)
 		else
-			for _, canvas in cx.canvas:list() do
-				if canvas.owner == tern.plugin.id and canvas.title == TITLE then
-					cx.layout:close(canvas.pane)
-				end
-			end
+			hide_sidebars(cx)
 		end
 	end,
 })
 tern.bind("cmd+alt+shift+h", "plugin.omp-history.toggle")
+
+tern.chrome.widget("toggle", {
+	name = "OMP History",
+	description = "显示或隐藏 OMP 会话历史",
+	icon = "history",
+	render = function(_pane)
+		return { text = "", title = "显示/隐藏 OMP 会话历史", command = "plugin.omp-history.toggle" }
+	end,
+})
 
 -- 定期在新标签上挂载面板，并清理只剩侧边栏的标签。
 local function tick(cx)
@@ -300,11 +346,15 @@ local function tick(cx)
 	for _, canvas in cx.canvas:list() do
 		if canvas.owner == tern.plugin.id and canvas.title == TITLE then
 			local tab = cx.session:tab_of(canvas.pane)
+			sidebar_tabs[canvas.pane] = tab
 			local count = 0
 			for _, pane in cx.session:panes() do
 				if pane.tab == tab then count += 1 end
 			end
-			if tab and count == 1 then cx.layout:close(canvas.pane) end
+			if tab and count == 1 then
+				sidebar_tabs[canvas.pane] = nil
+				cx.layout:close(canvas.pane)
+			end
 		end
 	end
 	ensure_sidebar(cx)
@@ -314,8 +364,20 @@ local function tick(cx)
 	end
 end
 
-tern.on("pane_closed", function(ev)
+-- 关闭整个标签时不改变其他标签的历史侧边栏显示状态。
+tern.on("tab_closed", function(ev)
+	for pane, tab in sidebar_tabs do
+		if tab == ev.tab then sidebar_tabs[pane] = nil end
+	end
+end)
+
+tern.on("pane_closed", function(ev, cx)
+	local was_sidebar = sidebar_tabs[ev.pane] ~= nil
+	sidebar_tabs[ev.pane] = nil
 	panes[ev.pane] = nil
+	if was_sidebar and tern.kv.get("visible") == true then
+		hide_sidebars(cx, ev.pane)
+	end
 end)
 
 -- 定期刷新历史，手动刷新和搜索不必等待定时器。
@@ -325,12 +387,18 @@ local function refresh_tick(cx)
 end
 
 tern.on("window_start", function(cx)
+	initialize_visibility(cx)
+	ensure_toolbar_widget(cx)
 	ensure_sidebar(cx)
 	refresh(cx)
 end)
 -- 插件重载不会重新触发 window_start，需要主动恢复索引。
 tern.timer(100, function(cx)
-	if cx then refresh(cx) end
+	if cx then
+		initialize_visibility(cx)
+		ensure_toolbar_widget(cx)
+		refresh(cx)
+	end
 end)
 tern.timer(1000, tick)
 tern.timer(30000, refresh_tick)

@@ -56,3 +56,53 @@
   white-space: nowrap;
   text-align: right;
 }
+
+/* 小组件作为窗口工具栏入口，与原有按钮保持间距。 */
+html.tn-widgets #widgetbar {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  height: auto !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  padding-bottom: 3px !important;
+  z-index: 100 !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+}
+
+html.tn-widgets #widgetbar > * {
+  pointer-events: auto !important;
+}
+
+html.tn-widgets #widgetbar .wg-row {
+  overflow: visible !important;
+}
+
+html.tn-widgets #tabbar .tb-in {
+  padding-right: 30px;
+}
+
+#widgetbar .wg[title="显示/隐藏 OMP 会话历史"] {
+  position: fixed;
+  top: 6px;
+  right: 12px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#widgetbar .wg[title="显示/隐藏 OMP 会话历史"]:hover {
+  background: var(--l1);
+  color: var(--t1);
+}
+
+#widgetbar .wg[title="显示/隐藏 OMP 会话历史"] .wg-ico svg {
+  width: 14px;
+  height: 14px;
+}
